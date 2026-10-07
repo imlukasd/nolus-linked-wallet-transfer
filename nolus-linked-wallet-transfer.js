@@ -11,16 +11,6 @@
 (async () => {
   "use strict";
 
-  const KNOWN_ASSETS = Object.freeze({
-    unls: Object.freeze({ symbol: "NLS", decimals: 6 }),
-    "ibc/4DE84C92C714009D07AFEA7350AB3EC383536BB0FAAD7AF9C0F1A0BEA169304E":
-      Object.freeze({ symbol: "INJ", decimals: 18 }),
-    "ibc/32B15E261477BD3A14EE91726C48E49FDF8DDF54970E3652A1C48CD42FE3E084":
-      Object.freeze({ symbol: "SOL", decimals: 9 }),
-    "ibc/3E507F7BA8D40C5CDFFB74234444ECEB6889562B82DE70E70F9EA8DE16B3D452":
-      Object.freeze({ symbol: "USDC", decimals: 6 }),
-  });
-
   const cfg = {
     source: "",
     destination: "",
@@ -35,7 +25,8 @@
   // Solana-origin USDC held ON NOLUS, not USDC in the Solana wallet.
   const feeDenom =
     "ibc/3E507F7BA8D40C5CDFFB74234444ECEB6889562B82DE70E70F9EA8DE16B3D452";
-  const feeDecimals = KNOWN_ASSETS[feeDenom].decimals;
+  let feeDecimals = null;
+  let assetCatalog = new Map();
   // This gas limit is for the first simulation only. The final value comes
   // from the current Nolus gas multiplier and simulated gas usage.
   const initialSimulationGas = 250000n;
@@ -485,6 +476,61 @@
     return data;
   };
 
+  const fetchAssetCatalog = async () => {
+    assetCatalog = new Map();
+    feeDecimals = null;
+    const data = await request("/api/currencies", undefined, location.origin);
+
+    if (
+      !data?.currencies ||
+      typeof data.currencies !== "object" ||
+      Array.isArray(data.currencies)
+    ) {
+      throw new Error("Nolus asset metadata is unavailable.");
+    }
+
+    const catalog = new Map();
+    const conflicts = new Set();
+
+    for (const item of Object.values(data.currencies)) {
+      const denom = item?.bank_symbol;
+      const symbol = item?.ticker;
+      const decimals = item?.decimal_digits;
+
+      if (
+        typeof denom !== "string" ||
+        typeof symbol !== "string" ||
+        !symbol || symbol.length > 24 ||
+        /[\x00-\x1f\x7f]/.test(symbol) ||
+        !Number.isInteger(decimals) ||
+        decimals < 0 || decimals > 36 ||
+        conflicts.has(denom)
+      ) {
+        continue;
+      }
+
+      const previous = catalog.get(denom);
+
+      if (previous &&
+          (previous.symbol !== symbol || previous.decimals !== decimals)) {
+        catalog.delete(denom);
+        conflicts.add(denom);
+      } else {
+        catalog.set(denom, { symbol, decimals });
+      }
+    }
+
+    const feeAsset = catalog.get(feeDenom);
+
+    if (!feeAsset || feeAsset.symbol !== "USDC") {
+      throw new Error("The exact Nolus USDC fee asset is missing from current metadata.");
+    }
+
+    assetCatalog = catalog;
+    feeDecimals = feeAsset.decimals;
+    return catalog;
+  };
+
   const selectEndpoint = async () => {
     if (base) return;
 
@@ -738,15 +784,25 @@
       throw new Error("Wallet account changed.");
     }
 
-    const [account, coins, feeParams, gasConfig] =
+    const [account, coins, feeParams, gasConfig, catalog] =
       await Promise.all([
         getAccount(),
         getBalances(),
         request("/nolus/tax/v2/params"),
         request("/api/fees/gas-config", undefined, location.origin),
+        fetchAssetCatalog(),
       ]);
 
     checkAccountKey(account, signer.publicKey);
+
+    const currentAsset = catalog.get(cfg.tokenDenom);
+
+    if (
+      cfg.tokenSymbol !== (currentAsset?.symbol || "UNLISTED") ||
+      cfg.tokenDecimals !== (currentAsset?.decimals ?? null)
+    ) {
+      throw new Error("Asset metadata changed. Select the asset again and preview anew.");
+    }
 
     const balance = (d) =>
       BigInt(
@@ -958,6 +1014,10 @@
     throw new Error("Gas estimate did not stabilize. Nothing was signed.");
   };
 
+  const formatFee = (units) => feeDecimals === null
+    ? `${units} base units of USDC`
+    : `${formatUnits(units, feeDecimals)} USDC`;
+
   const show = (plan, signer) => {
     const details = {
       Network: chainId,
@@ -970,7 +1030,7 @@
       Amount: formatUnits(plan.units, cfg.tokenDecimals ?? 0) +
         (cfg.tokenDecimals === null ? " base units" : ""),
       AmountBaseUnits: plan.units,
-      Fee: `${formatUnits(plan.fee.units, feeDecimals)} USDC on Nolus`,
+      Fee: `${formatFee(plan.fee.units)} on Nolus`,
       FeeBaseUnits: plan.fee.units,
       FeeDenom: feeDenom,
       GasLimit: plan.fee.gas,
@@ -1069,7 +1129,7 @@
           sentPlan.tokenDecimals ?? 0
         ),
         fee: sentPlan.feeUnits
-          ? `${formatUnits(sentPlan.feeUnits, feeDecimals)} USDC`
+          ? formatFee(sentPlan.feeUnits)
           : "Fee amount not saved by the previous script version",
       }
     );
@@ -1114,7 +1174,7 @@
         ` ${cfg.tokenDecimals === null ? "base units" : cfg.tokenSymbol}\n` +
         `Base units: ${plan.units}\n` +
         `Token denom: ${cfg.tokenDenom}\n` +
-        `Fee: ${formatUnits(plan.fee.units, feeDecimals)} USDC on Nolus\n` +
+        `Fee: ${formatFee(plan.fee.units)} on Nolus\n` +
         `Gas limit: ${plan.fee.gas}\n\n` +
         "The wallet will sign Amino JSON. " +
         "THIS SIGNATURE AUTHORIZES " +
@@ -1391,7 +1451,7 @@
       const coin = selectedCoin();
       if (!coin) return;
 
-      const known = KNOWN_ASSETS[coin.denom];
+      const known = assetCatalog.get(coin.denom);
       cfg.tokenDenom = coin.denom;
       cfg.tokenSymbol = known?.symbol || "UNLISTED";
       cfg.tokenDecimals = known?.decimals ?? null;
@@ -1437,7 +1497,19 @@
       cfg.source = "";
       const signer = await getSigner();
       await selectEndpoint();
-      coins = (await getBalances()).filter((b) => /^\d+$/.test(b.amount) && BigInt(b.amount) > 0n);
+      const [balancesResult, catalogResult] = await Promise.allSettled([
+        getBalances(),
+        fetchAssetCatalog(),
+      ]);
+
+      if (balancesResult.status === "rejected") throw balancesResult.reason;
+      coins = balancesResult.value.filter(
+        (b) => /^\d+$/.test(b.amount) && BigInt(b.amount) > 0n
+      );
+
+      if (catalogResult.status === "rejected") {
+        console.warn("Asset metadata is unavailable:", catalogResult.reason);
+      }
       $("solana").textContent = signer.address;
       $("source").textContent = cfg.source;
       $("wallet-details").classList.remove("hidden");
@@ -1448,7 +1520,7 @@
       for (const coin of coins) {
         const option = document.createElement("option");
         option.value = coin.denom;
-        option.textContent = `${KNOWN_ASSETS[coin.denom]?.symbol || "Unlisted"} · ${coin.denom.length > 28 ? coin.denom.slice(0, 28) + "…" : coin.denom}`;
+        option.textContent = `${assetCatalog.get(coin.denom)?.symbol || "Unlisted"} - ${coin.denom.length > 28 ? coin.denom.slice(0, 28) + "..." : coin.denom}`;
         $("asset").append(option);
       }
 
@@ -1458,13 +1530,15 @@
         return;
       }
 
-      const firstKnown = coins.findIndex((b) => KNOWN_ASSETS[b.denom]);
+      const firstKnown = coins.findIndex((b) => assetCatalog.has(b.denom));
       if (firstKnown >= 0) $("asset").selectedIndex = firstKnown;
       updateAsset();
       message(attemptedBroadcast
         ? "A transaction was broadcast. Check its hash before starting another transfer."
-        : `Found ${coins.length} spendable assets on Nolus. Select one to transfer.`,
-      attemptedBroadcast ? "" : "success");
+        : catalogResult.status === "rejected"
+          ? `Found ${coins.length} spendable assets. Metadata is unavailable; preview will retry.`
+          : `Found ${coins.length} spendable assets on Nolus. Select one to transfer.`,
+      attemptedBroadcast || catalogResult.status === "rejected" ? "" : "success");
       } catch (e) {
         $("wallet-choices").classList.remove("hidden");
         $("form").classList.add("hidden");

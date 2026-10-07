@@ -17,7 +17,7 @@ The script runs only on `https://app.nolus.io/`. It does not bridge, swap, or mo
 2. Open the browser Developer Tools Console.
 3. Review and paste the entire contents of [`nolus-linked-wallet-transfer.js`](./nolus-linked-wallet-transfer.js) into the Console.
 4. Check the derived Nolus source address shown in the panel. Select a spendable asset.
-5. Enter the destination `nolus1...` address and amount, or choose **Max**. Known assets use token units. Assets with unverified decimals use a balance percentage or exact base units.
+5. Enter the destination `nolus1...` address and amount, or choose **Max**. Assets with verified decimals use token units. Assets with unverified decimals use a balance percentage or exact base units.
 6. Select **Preview transfer**. Check the destination, amount, exact bank denomination, fee, gas limit, and IBC trace.
 7. Select **Sign and transfer** only after reviewing every field. The wallet's `signMessage` request authorizes the Nolus transfer. Save the transaction hash and use **Check status** until Nolus confirms it.
 
@@ -37,6 +37,6 @@ The first simulation starts with a temporary `250000` gas limit. The final signe
 - The IBC trace hash, spendable balance, accepted fee denomination, wallet key, signature, and account sequence are checked before broadcast.
 - Preview and send must produce the same Amino sign document. A changed transaction requires a new preview.
 - One broadcast attempt is allowed per loaded script. The transaction hash is kept in browser session storage so a reload can restore status checking after an uncertain response.
-- The built-in labels and decimals cover NLS, INJ, SOL, and the fee USDC denomination. Other assets remain selectable without guessing their decimals.
+- The asset list comes from the linked account's on-chain spendable balances. Labels and decimals are fetched at runtime from Nolus `/api/currencies` by exact bank denomination, including inactive catalog entries. Assets without consistent catalog metadata remain selectable without guessing their decimals.
 
 This helper has not been audited. Inspect the exact Amino JSON in the Console and the on-page review before signing. For a first transfer, use a small amount and confirm the destination balance on Nolus.
