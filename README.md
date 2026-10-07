@@ -39,4 +39,4 @@ The first simulation starts with a temporary `250000` gas limit. The final signe
 - One broadcast attempt is allowed per loaded script. The transaction hash is kept in browser session storage so a reload can restore status checking after an uncertain response.
 - The asset list comes from the linked account's on-chain spendable balances. Labels and decimals are fetched at runtime from Nolus `/api/currencies` by exact bank denomination, including inactive catalog entries. Assets without consistent catalog metadata remain selectable without guessing their decimals.
 
-This helper has not been audited. Inspect the exact Amino JSON in the Console and the on-page review before signing. For a first transfer, use a small amount and confirm the destination balance on Nolus.
+This helper has not been audited. Inspect the exact Amino JSON in the Console and the on-page review before signing. If unsure, test with a small amount first and confirm it arrives at the destination on Nolus before transferring more.

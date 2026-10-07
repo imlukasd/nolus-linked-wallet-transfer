@@ -1396,7 +1396,7 @@
             <p class="small">Network fee and gas limit are calculated from current Nolus settings during preview. The source needs USDC on Nolus to pay the fee.</p>
             <button id="preview" type="button">Preview transfer</button>
           </section>
-          <section id="review" class="hidden"><h3>Review transfer</h3><dl id="review-list"></dl><p class="notice">The wallet's message signature authorizes this Nolus token transfer.</p><label class="check"><input id="ack" type="checkbox">I checked the destination, amount, denomination, and fee.</label><p><button id="send" type="button" disabled>Sign and transfer</button></p></section>
+          <section id="review" class="hidden"><h3>Review transfer</h3><dl id="review-list"></dl><p class="notice">The wallet's message signature authorizes this Nolus token transfer. If unsure, test with a small amount first and confirm it arrives before transferring more.</p><label class="check"><input id="ack" type="checkbox">I checked the destination, amount, denomination, and fee.</label><p><button id="send" type="button" disabled>Sign and transfer</button></p></section>
           <section id="tracking" class="hidden"><h3>Track transaction</h3><p class="small">Hash: <span id="hash" class="hash"></span></p><button id="status" class="secondary" type="button">Check status</button><p id="tx-result" role="status"></p></section>
           <p id="message" role="status" aria-live="polite"></p>
           <p class="small">Transfers only between nolus1... addresses. No bridge or swap. Never enter a seed phrase or private key.</p>
